@@ -36,6 +36,6 @@ LB_BACKEND:
 
 LB_NGINX_INSTANCES:
   - domain: lab.com
-    email: boxorprime@gmail.com
+    email: soroushimanian@gmail.com
 
 ansible_python_interpreter: /usr/bin/python3
