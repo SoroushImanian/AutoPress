@@ -7,5 +7,5 @@ NGINX_PKGS_LIST:
 
 NGINX_INSTANCES:
   - domain: "{{ MAIN_DOMAIN }}"
-    email: boxorprime@gmail.com
+    email: soroushimanian@gmail.com
     root: /usr/share/wordpress/
