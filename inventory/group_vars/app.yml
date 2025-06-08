@@ -34,7 +34,7 @@ FORWARD_CHAINS:
 
 NGINX_INSTANCES:
   - domain: lab.com
-    email: boxorprime@gmail.com
+    email: soroushimanian@gmail.com
     root: /home/www-data/lab.com/www/wordpress
 
 WP_INSTANCES:
