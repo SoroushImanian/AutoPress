@@ -1,0 +1,18 @@
+server {
+    listen 80;
+    # listen [::]:80;
+
+    server_name {{ LB_DOMAIN }} www.{{ LB_DOMAIN }};
+
+    access_log /var/log/nginx/{{ LB_DOMAIN }}-http-initial.access.log;
+    error_log /var/log/nginx/{{ LB_DOMAIN }}-http-initial.error.log;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 200 "Setting up SSL, please try HTTPS shortly.";
+        add_header Content-Type text/plain;
+    }
+}

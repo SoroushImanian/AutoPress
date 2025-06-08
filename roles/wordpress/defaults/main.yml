@@ -1,0 +1,8 @@
+---
+
+WP_INSTANCES:
+  - name: lab.com
+    db: lab_com
+    db_user: lab_user
+    db_host: localhost 
+    db_charset: utf8 

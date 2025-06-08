@@ -1,0 +1,6 @@
+---
+
+- name: Install actions on all host
+  hosts: all
+  roles:
+    - test

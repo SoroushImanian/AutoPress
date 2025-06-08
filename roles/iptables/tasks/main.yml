@@ -1,0 +1,123 @@
+---
+
+- name: Install the latest version packages
+  apt:
+    name: "{{ item }}"
+    state: latest
+    update_cache: yes
+  become: true
+  loop:
+    - "{{ IPTABLES_PKGS_LIST }}"
+  tags:
+    - pkg
+
+- name: Check if grub-pc is installed
+  shell: dpkg -l | grep grub-pc || true
+  register: grub_check
+  changed_when: false
+  failed_when: false
+
+- name: Purge grub-pc if half-installed or broken
+  apt:
+    name: grub-pc
+    state: absent
+    purge: true
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Prevent grub-pc from being reinstalled
+  command: apt-mark hold grub-pc
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Safe upgrade with rescue in case of grub-pc failure
+  block:
+    - name: Try to upgrade all packages
+      apt:
+        upgrade: dist
+      become: true
+      register: upgrade_result
+
+  rescue:
+    - name: Log that upgrade failed due to grub-pc
+      debug:
+        msg: "Upgrade failed — trying to remove grub-pc and retry"
+
+    - name: Remove grub-pc to resolve upgrade block
+      apt:
+        name: grub-pc
+        state: absent
+        purge: true
+      become: true
+      ignore_errors: true
+
+    - name: Fix dpkg after removing grub-pc
+      shell: |
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a
+      become: true
+      register: post_fix_result
+      failed_when: false
+
+    - name: Retry upgrade after removing grub-pc
+      apt:
+        name: "*"
+        state: latest
+      become: true
+      tags:
+        - pkg
+
+- name: Clean apt package cache on VMs
+  apt:
+    autoclean: yes
+  become: true
+
+- name: Remove unused dependencies on VMs
+  apt:
+    autoremove: yes
+    purge: yes
+  become: true
+
+#- name: reload iptables
+    #shell: |
+      #iptables -I INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+      #iptables -I OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+      #systemctl enable iptables
+      #iptables-restore < /etc/iptables/rules.v4    
+      #changed_when: false
+
+- name: Allow related and established connections on INPUT
+  iptables:
+    chain: INPUT
+    state: present
+    action: insert
+    match: state
+    ctstate: RELATED,ESTABLISHED
+    jump: ACCEPT
+
+- name: Allow related and established connections on OUTPUT
+  iptables:
+    chain: OUTPUT
+    state: present
+    action: insert
+    match: state
+    ctstate: RELATED,ESTABLISHED
+    jump: ACCEPT
+
+- name: Enable iptables service
+  systemd:
+    name: iptables
+    enabled: yes
+
+- name: Restore iptables rules from rules.v4
+  shell: iptables-restore < /etc/iptables/rules.v4
+  become: true
+
+- name: iptables config 
+  template:
+    src: etc/iptables/rules.v4.j2 
+    dest: /etc/iptables/rules.v4
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - restart iptables

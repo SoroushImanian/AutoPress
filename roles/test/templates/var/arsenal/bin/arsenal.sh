@@ -1,0 +1,2 @@
+envOrg={{ VARIABLE }}
+echo "${enOrg}"

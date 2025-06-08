@@ -1,0 +1,182 @@
+---
+
+- name: Install the latest version packages
+  apt:
+    name: "{{ item }}"
+    state: latest
+    update_cache: yes
+  become: true
+  loop:
+    - "{{ NGINX_PKGS_LIST }}"
+  tags:
+    - pkg
+
+- name: Check if grub-pc is installed
+  shell: dpkg -l | grep grub-pc || true
+  register: grub_check
+  changed_when: false
+  failed_when: false
+
+- name: Purge grub-pc if half-installed or broken
+  apt:
+    name: grub-pc
+    state: absent
+    purge: true
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Prevent grub-pc from being reinstalled
+  command: apt-mark hold grub-pc
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Safe upgrade with rescue in case of grub-pc failure
+  block:
+    - name: Try to upgrade all packages
+      apt:
+        upgrade: dist
+      become: true
+      register: upgrade_result
+
+  rescue:
+    - name: Log that upgrade failed due to grub-pc
+      debug:
+        msg: "Upgrade failed — trying to remove grub-pc and retry"
+
+    - name: Remove grub-pc to resolve upgrade block
+      apt:
+        name: grub-pc
+        state: absent
+        purge: true
+      become: true
+      ignore_errors: true
+
+    - name: Fix dpkg after removing grub-pc
+      shell: |
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a
+      become: true
+      register: post_fix_result
+      failed_when: false
+
+    - name: Retry upgrade after removing grub-pc
+      apt:
+        name: "*"
+        state: latest
+      become: true
+      tags:
+        - pkg
+
+- name: Clean apt package cache on VMs
+  apt:
+    autoclean: yes
+  become: true
+
+- name: Remove unused dependencies on VMs
+  apt:
+    autoremove: yes
+    purge: yes
+  become: true
+
+- name: Create directory if it does not exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /etc/nginx/conf.d/
+    - /etc/nginx/specific-conf.d/
+    - /etc/systemd/system/nginx.service.d/
+  become: true
+
+- name: Apply Nginx systemd override
+  template:
+    src: etc/systemd/system/nginx.service.d/override.conf.j2
+    dest: /etc/systemd/system/nginx.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    reload systemd
+
+- name: Disable default Nginx site to prevent conflicts
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify:
+    reload nginx
+
+#SSL
+
+- name: Ensure SSL directory exists for Nginx certificates
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  become: true
+  tags: 
+    - ssl
+
+- name: Generate SSL private key for {{ LB_DOMAIN }}
+  community.crypto.openssl_privatekey:
+    path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.key"
+    size: 2048
+    mode: '0600'
+    owner: root
+    group: root
+  become: true
+  tags: 
+    - ssl
+
+- name: Generate CSR (Certificate Signing Request) for {{ LB_DOMAIN }}
+  community.crypto.openssl_csr:
+    path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.csr"
+    privatekey_path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.key"
+    common_name: "{{ LB_DOMAIN }}"
+    subject_alt_name:
+      - "DNS:{{ LB_DOMAIN }}"
+      - "DNS:www.{{ LB_DOMAIN }}"
+    organization_name: "{{ LB_DOMAIN }} Company"
+    country_name: "IR"
+  become: true
+  tags: 
+    - ssl
+
+- name: Generate self-signed SSL certificate from CSR for {{ LB_DOMAIN }}
+  community.crypto.x509_certificate:
+    path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.crt"
+    csr_path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.csr"
+    privatekey_path: "/etc/nginx/ssl/{{ LB_DOMAIN }}.key"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+    # selfsigned_not_before: "-1d"
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+  notify: 
+    reload nginx
+  tags: 
+    - ssl
+
+- name: Generate dhparam.pem if it does not exist
+  openssl_dhparam:
+    path: /etc/nginx/dhparam.pem
+    size: 2048 #4096
+  become: true
+  tags:
+    - ssl
+
+- name: Apply Nginx configuration with self-signed SSL
+  template:
+    src: etc/nginx/conf.d/lb.conf
+    dest: /etc/nginx/conf.d/lb.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    reload nginx

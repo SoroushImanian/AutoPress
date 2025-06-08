@@ -1,0 +1,3 @@
+{% for sysctl_parameter in SYSCTL_PARAMETERS %}
+{{ sysctl_parameter.name }} = {{ sysctl_parameter.value }}
+{% endfor %}

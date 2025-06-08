@@ -1,0 +1,22 @@
+---
+
+all:
+  hosts:
+    labtwo.com:
+    labthree.com:
+    labfour.com:
+    labfive.com:
+
+app:
+  hosts:
+    labtwo.com:
+    labthree.com:
+
+db:
+  hosts:
+    labfour.com:
+
+lb:
+  hosts:
+    labfive.com:
+

@@ -1,0 +1,9 @@
+---
+
+PHP_FPM_VERSION: "8.3"
+
+PHP_FPM_PKGS_LIST:
+  - "php{{ PHP_FPM_VERSION }}-fpm"
+  - "php{{ PHP_FPM_VERSION }}-mysql"
+  - "php{{ PHP_FPM_VERSION }}-gd"
+

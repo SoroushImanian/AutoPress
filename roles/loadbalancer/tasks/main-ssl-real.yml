@@ -1,0 +1,187 @@
+---
+
+- name: Install the latest version packages
+  apt:
+    name: "{{ item }}"
+    state: latest
+    update_cache: yes
+  become: true
+  loop:
+    - "{{ NGINX_PKGS_LIST }}"
+  tags:
+    - pkg
+
+- name: Check if grub-pc is installed
+  shell: dpkg -l | grep grub-pc || true
+  register: grub_check
+  changed_when: false
+  failed_when: false
+
+- name: Purge grub-pc if half-installed or broken
+  apt:
+    name: grub-pc
+    state: absent
+    purge: true
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Prevent grub-pc from being reinstalled
+  command: apt-mark hold grub-pc
+  become: true
+  when: "'grub-pc' in grub_check.stdout"
+
+- name: Safe upgrade with rescue in case of grub-pc failure
+  block:
+    - name: Try to upgrade all packages
+      apt:
+        upgrade: dist
+      become: true
+      register: upgrade_result
+
+  rescue:
+    - name: Log that upgrade failed due to grub-pc
+      debug:
+        msg: "Upgrade failed — trying to remove grub-pc and retry"
+
+    - name: Remove grub-pc to resolve upgrade block
+      apt:
+        name: grub-pc
+        state: absent
+        purge: true
+      become: true
+      ignore_errors: true
+
+    - name: Fix dpkg after removing grub-pc
+      shell: |
+        DEBIAN_FRONTEND=noninteractive dpkg --configure -a
+      become: true
+      register: post_fix_result
+      failed_when: false
+
+    - name: Retry upgrade after removing grub-pc
+      apt:
+        upgrade: dist
+      become: true
+
+- name: Create directory if it does not exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /etc/nginx/conf.d/
+    - /etc/nginx/specific-conf.d/
+    - /etc/systemd/system/nginx.service.d/
+  become: true
+
+- name: Apply Nginx systemd override
+  template:
+    src: etc/systemd/system/nginx.service.d/override.conf.j2
+    dest: /etc/systemd/system/nginx.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - reload systemd
+
+- name: Disable default Nginx site to prevent conflicts
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify:
+    - reload nginx 
+
+- name: Apply initial Nginx config for Certbot HTTP challenge
+  template:
+    src: etc/nginx/conf.d/lb-initial-http.conf.j2
+    dest: /etc/nginx/conf.d/lb.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - reload nginx
+
+- name: Ensure Nginx is running and reloaded with initial config
+  service:
+    name: nginx
+    state: reloaded
+    enabled: yes
+  become: true
+
+# SSL Certbot
+- name: Generate dhparam.pem if it does not exist
+  openssl_dhparam:
+    path: /etc/nginx/dhparam.pem
+    size: 2048 #4096
+  become: true
+  tags:
+    - ssl
+    - certbot
+
+- name: Create directory for Let's Encrypt challenge if it doesn't exist
+  file:
+    path: /var/www/html/.well-known/acme-challenge
+    state: directory
+    mode: '0755'
+  become: true
+  tags:
+    - ssl
+    - certbot
+
+- name: Obtain SSL certificate from Let's Encrypt for the Load Balancer
+  command: >
+    certbot certonly --nginx -d {{ instance.domain }} -d www.{{ instance.domain }}
+    --email {{ instance.email }} --agree-tos --non-interactive
+    --deploy-hook "systemctl reload nginx"
+  args:
+    creates: /etc/letsencrypt/live/{{ instance.domain }}/fullchain.pem
+  become: true
+  loop: "{{ LB_NGINX_INSTANCES }}"
+  loop_control:
+    loop_var: instance
+  # notify: reload nginx
+  tags:
+    - ssl
+    - certbot
+  register: certbot_status
+
+- name: Apply final Nginx SSL configuration
+  template:
+    src: etc/nginx/conf.d/lb-final-ssl.conf.j2
+    dest: /etc/nginx/conf.d/lb.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - reload nginx
+  when: certbot_status is changed or (certbot_status.rc is defined and certbot_status.rc == 0)
+
+#SSL Cerbot Renew (auto)
+- name: Check Certbot renew timer/cron job
+  command: systemctl list-timers certbot.timer
+  register: certbot_timer_check
+  changed_when: false
+  failed_when: false
+  become: true
+  tags:
+    - ssl
+    - certbot
+
+- name: Show Certbot timer status
+  debug:
+    var: certbot_timer_check.stdout_lines
+  tags:
+    - ssl
+    - certbot
+
+- name: Ensure Certbot renewal is scheduled (dry run)
+  command: certbot renew --dry-run
+  changed_when: false
+  become: true
+  tags:
+    - ssl
+    - certbot

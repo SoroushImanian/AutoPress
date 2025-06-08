@@ -1,0 +1,15 @@
+---
+
+MARIADB_PKGS_LIST:
+  - mariadb-server
+  - mariadb-client
+  - python3-mysqldb
+  - percona-toolkit
+
+DB_INSTANCES:
+  - name: lab_com
+
+DB_USERS:
+  - name: lab_user
+    priv:
+      - 'lab_net.*:ALL,GRANT'
