@@ -1,3 +1,7 @@
+<div align="center">
+  <img height="700"src="1.png"  />
+</div>
+
 ### ✨ Ansible High-Availability WordPress Deployment ✨
 
 This Infrastructure as Code (IaC) project provides a collection of Ansible playbooks and roles to provision the entire deployment of a high-availability, secure WordPress stack. The architecture features an Nginx load balancer distributing traffic between two application servers, a dedicated MariaDB database, and security hardening using iptables and fail2ban. The entire process is automated to ensure repeatable and consistent deployments.
@@ -61,6 +65,7 @@ The `loadbalancer` role is configured to handle the entire Certbot process using
 1.  **Inventory Setup:**
 
       * In `inventory/group_vars/lb.yml`, ensure your variables are set correctly:
+        
         ```yaml
         LB_DOMAIN: yourdomain.com
         LB_NGINX_INSTANCES:
@@ -78,6 +83,7 @@ The `loadbalancer` role is configured to handle the entire Certbot process using
 
 1.  **Configure your inventory** with your public domain and server IPs.
 2.  **Run the main playbook:**
+   
     ```sh
     ansible-playbook playbooks/all.yml
     ```
@@ -108,8 +114,8 @@ To get a local copy up and running, follow these simple steps.
 1.  **Clone the repository:**
 
     ```sh
-    git clone <your-repository-url>
-    cd <your-repository-name>
+    git clone https://github.com/SoroushImanian/ansible-playbook-autopress.git
+    cd ansible-playbook-autopress
     ```
 
 2.  **Install Ansible Collections:**
